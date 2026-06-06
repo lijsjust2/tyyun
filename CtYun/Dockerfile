@@ -1,11 +1,11 @@
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
 WORKDIR /src
 
-COPY CtYun.csproj .
-RUN dotnet restore
+COPY CtYun/CtYun.csproj ./CtYun/
+RUN dotnet restore ./CtYun/CtYun.csproj
 
-COPY . .
-RUN dotnet publish -c Release -o /app/publish
+COPY CtYun/ ./CtYun/
+RUN dotnet publish ./CtYun/CtYun.csproj -c Release -o /app/publish
 
 FROM mcr.microsoft.com/dotnet/runtime:8.0 AS base
 WORKDIR /app
