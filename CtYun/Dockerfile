@@ -5,7 +5,7 @@ COPY CtYun/CtYun.csproj ./CtYun/
 RUN dotnet restore ./CtYun/CtYun.csproj
 
 COPY CtYun/ ./CtYun/
-RUN dotnet publish ./CtYun/CtYun.csproj -c Release -o /app/publish
+RUN dotnet publish ./CtYun/CtYun.csproj -c Release -p:PublishAot=false -o /app/publish
 
 FROM mcr.microsoft.com/dotnet/runtime:8.0 AS base
 WORKDIR /app
