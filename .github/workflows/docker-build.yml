@@ -1,0 +1,133 @@
+name: Build and Release
+
+on:
+  push:
+    tags: [ 'v*' ]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '发布版本号（如 1.1.5）'
+        required: true
+        default: 'latest'
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Determine release version
+        id: rel
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            VERSION="${GITHUB_REF#refs/tags/v}"
+          else
+            VERSION="${{ inputs.version }}"
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Release version: $VERSION"
+
+      - name: Build AMD64 image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          platforms: linux/amd64
+          push: false
+          no-cache: true
+          file: ./CtYun/Dockerfile
+          tags: ctyun:amd64
+          outputs: type=docker,dest=/tmp/ctyun-amd64.tar
+
+      - name: Build ARM64 image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          platforms: linux/arm64
+          push: false
+          no-cache: true
+          file: ./CtYun/Dockerfile
+          tags: ctyun:arm64
+          outputs: type=docker,dest=/tmp/ctyun-arm64.tar
+
+      - name: Compress images
+        run: |
+          gzip -9 /tmp/ctyun-amd64.tar
+          gzip -9 /tmp/ctyun-arm64.tar
+          echo "=== Image sizes ==="
+          ls -lh /tmp/ctyun-*.tar.gz
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.rel.outputs.version }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+          name: "v${{ steps.rel.outputs.version }}"
+          body: |
+            ## CtYun 云电脑保活 v${{ steps.rel.outputs.version }}
+
+            ### 支持架构
+            - **AMD64** (x86_64) - 适用于普通 PC、服务器、云主机
+            - **ARM64** (aarch64) - 适用于树莓派、ARM 服务器
+
+            ### 快速部署
+            ```bash
+            # 1. 下载对应架构的镜像（以 AMD64 为例）
+            # 2. 加载镜像
+            docker load -i ctyun-amd64.tar.gz
+            # 3. 准备配置
+            mkdir -p ./ctyun-data
+            cat > ./ctyun-data/accounts.json << 'EOF'
+            {
+              "keepAliveSecondsMin": 40,
+              "keepAliveSecondsMax": 80,
+              "accounts": [
+                {
+                  "name": "my-account",
+                  "user": "你的账号",
+                  "password": "你的密码"
+                }
+              ]
+            }
+            EOF
+            # 4. 首次运行（交互模式，用于绑定设备）
+            docker run -it --rm \
+              --name ctyun-init \
+              -v "$(pwd)/ctyun-data:/app/data" \
+              ctyun:amd64
+            # 5. 绑定成功后后台运行
+            docker run -d \
+              --name ctyun \
+              --restart unless-stopped \
+              -v "$(pwd)/ctyun-data:/app/data" \
+              ctyun:amd64
+            ```
+
+            ### ARM64 设备
+            ```bash
+            docker load -i ctyun-arm64.tar.gz
+            docker run -d \
+              --name ctyun \
+              --restart unless-stopped \
+              -v "$(pwd)/ctyun-data:/app/data" \
+              ctyun:arm64
+            ```
+
+            ### 更新说明
+            - 新增 `keepAliveSecondsMin` / `keepAliveSecondsMax` 配置，支持随机保活间隔
+            - 不配置时行为与原版一致（使用固定 `keepAliveSeconds`）
+          draft: false
+          prerelease: false
+          files: |
+            /tmp/ctyun-amd64.tar.gz
+            /tmp/ctyun-arm64.tar.gz
